@@ -152,4 +152,147 @@ describe('EngineRouter (E2E across Epics 1-4 with mock providers)', () => {
     const pipeline = new AudioPipeline(capture, {});
     expect(pipeline).toBeDefined();
   });
+
+  test('dual-ear stereo: capture monitor pans to left while every TTS chunk pans right', async () => {
+    const capture = new MockAudioCaptureProvider();
+    const monitorCalls: Array<'left' | 'right' | null> = [];
+    (
+      capture as unknown as {
+        setMonitor: (pan: 'left' | 'right' | null) => void;
+      }
+    ).setMonitor = (pan) => {
+      monitorCalls.push(pan);
+    };
+    const playback = new MockAudioPlaybackProvider();
+    const router = new EngineRouter({
+      capture,
+      playback,
+      pipeline: {
+        vad: { minSpeechMs: 60, minSilenceMs: 200 },
+        chunker: { chunkMs: 300, maxChunkMs: 600 },
+        onlyVoicedFramesToChunker: true,
+        highPass: false,
+      },
+      stt: { providers: [new MockSttProvider()] },
+      translation: { providers: [new MockTranslationProvider()] },
+      tts: { providers: [new MockTtsProvider()] },
+      sourceLang: 'en',
+      targetLang: 'es',
+      dualEarStereo: true,
+    });
+
+    await router.start();
+    capture.pushSamples(buildSpeechSamples(10));
+    capture.pushSamples(buildSilenceSamples(15));
+    await new Promise((r) => setTimeout(r, 50));
+    await router.stop();
+
+    // Capture-side: at least one 'left' monitor call so the original
+    // tab/mic audio is sent to the left ear.
+    expect(monitorCalls).toContain('left');
+    // Playback-side: every synthesized translation lands on the right ear.
+    expect(playback.played.length).toBeGreaterThan(0);
+    for (const entry of playback.played) {
+      expect(entry.pan).toBe('right');
+    }
+  });
+
+  test('dual-ear stereo: every translation across multiple sequential utterances pans right', async () => {
+    const capture = new MockAudioCaptureProvider();
+    const playback = new MockAudioPlaybackProvider();
+    const router = new EngineRouter({
+      capture,
+      playback,
+      pipeline: {
+        vad: { minSpeechMs: 60, minSilenceMs: 200 },
+        chunker: { chunkMs: 300, maxChunkMs: 600 },
+        onlyVoicedFramesToChunker: true,
+        highPass: false,
+      },
+      stt: { providers: [new MockSttProvider()] },
+      translation: { providers: [new MockTranslationProvider()] },
+      tts: { providers: [new MockTtsProvider()] },
+      sourceLang: 'en',
+      targetLang: 'vi',
+      dualEarStereo: true,
+    });
+
+    const events: EngineEvent[] = [];
+    router.on((e) => events.push(e));
+
+    await router.start();
+    // Three speech / silence cycles produce three independent utterances.
+    for (let i = 0; i < 3; i++) {
+      capture.pushSamples(buildSpeechSamples(10));
+      capture.pushSamples(buildSilenceSamples(15));
+    }
+    await new Promise((r) => setTimeout(r, 80));
+    await router.stop();
+
+    const translations = events.filter(
+      (e) => e.type === 'translation-final',
+    );
+    expect(translations.length).toBeGreaterThanOrEqual(3);
+    expect(playback.played.length).toBeGreaterThanOrEqual(3);
+    for (const entry of playback.played) {
+      expect(entry.pan).toBe('right');
+    }
+  });
+
+  test('language switching mid-session: detectedLang propagates from STT into translation requests', async () => {
+    const capture = new MockAudioCaptureProvider();
+    const playback = new MockAudioPlaybackProvider();
+    const translationProvider = new MockTranslationProvider();
+    const translateSpy = jest.spyOn(translationProvider, 'translate');
+    const router = new EngineRouter({
+      capture,
+      playback,
+      pipeline: {
+        vad: { minSpeechMs: 60, minSilenceMs: 200 },
+        chunker: { chunkMs: 300, maxChunkMs: 600 },
+        onlyVoicedFramesToChunker: true,
+        highPass: false,
+      },
+      stt: { providers: [new MockSttProvider()] },
+      translation: { providers: [translationProvider] },
+      tts: { providers: [new MockTtsProvider()] },
+      sourceLang: 'auto',
+      targetLang: 'vi',
+    });
+
+    const finals: EngineEvent[] = [];
+    router.on((e) => {
+      if (e.type === 'final-transcript' || e.type === 'translation-final') {
+        finals.push(e);
+      }
+    });
+
+    await router.start();
+    // Phase 1 — sourceLang=auto means MockSttSession reports detectedLang='en'.
+    capture.pushSamples(buildSpeechSamples(10));
+    capture.pushSamples(buildSilenceSamples(15));
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Switch the source language mid-session. setSourceLanguage closes the
+    // current STT session so the next chunk opens a fresh one with sourceLang='ja'.
+    router.setSourceLanguage('ja');
+    capture.pushSamples(buildSpeechSamples(10));
+    capture.pushSamples(buildSilenceSamples(15));
+    await new Promise((r) => setTimeout(r, 50));
+    await router.stop();
+
+    expect(translateSpy).toHaveBeenCalled();
+    const detectedLangs = translateSpy.mock.calls.map((c) => c[0].sourceLang);
+    expect(detectedLangs).toContain('en');
+    expect(detectedLangs).toContain('ja');
+
+    // The detectedLang should also surface on final-transcript events.
+    const finalTranscripts = finals.filter(
+      (e): e is Extract<EngineEvent, { type: 'final-transcript' }> =>
+        e.type === 'final-transcript',
+    );
+    const detectedOnFinals = finalTranscripts.map((e) => e.detectedLang);
+    expect(detectedOnFinals).toContain('en');
+    expect(detectedOnFinals).toContain('ja');
+  });
 });

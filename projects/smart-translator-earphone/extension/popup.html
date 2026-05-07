@@ -14,12 +14,21 @@
       <label>
         STT provider
         <select id="stt-provider">
-          <option value="whisper">OpenAI Whisper (~$0.006/min)</option>
-          <option value="google">Google Cloud STT (free 60 min/month)</option>
+          <option value="auto">
+            Auto (free): YouTube captions, else Whisper-WASM
+          </option>
+          <option value="youtube-captions">
+            YouTube captions (free, watch tab only)
+          </option>
+          <option value="whisper-wasm">
+            Whisper-WASM in browser (free, model download)
+          </option>
+          <option value="whisper">OpenAI Whisper API (paid, ~$0.006/min)</option>
+          <option value="google">Google Cloud STT (paid, free 60 min/month)</option>
         </select>
       </label>
 
-      <label>
+      <label id="api-key-row">
         API key
         <input
           id="api-key"
@@ -77,9 +86,11 @@
         <p id="translation"></p>
       </section>
       <p class="footnote">
-        Free Google Translate. Tab audio capture requires Whisper or Google
-        Cloud STT credentials. Keys are stored only in
-        <code>chrome.storage.session</code> (cleared when Chrome closes).
+        Free Google Translate is built in. The default <em>Auto</em> mode is
+        zero-key on YouTube and falls back to local Whisper-WASM elsewhere
+        (one-time model download). API keys are only required for the paid
+        engines and are stored in <code>chrome.storage.session</code> (wiped
+        when Chrome closes).
       </p>
     </main>
     <script type="module" src="popup.js"></script>

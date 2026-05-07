@@ -1,10 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Smart Translator Earphone (companion)",
-  "version": "0.1.0",
-  "description": "Capture audio from a Chrome tab (YouTube, Netflix, meetings, …), transcribe it, translate it, and speak the translation in your ear. Free Google Translate is built in; STT requires an OpenAI / Google Cloud key (free tier available).",
-  "permissions": ["tabCapture", "offscreen", "storage", "activeTab"],
-  "host_permissions": ["https://api.openai.com/*", "https://speech.googleapis.com/*", "https://translate.googleapis.com/*"],
+  "version": "0.2.0",
+  "description": "Capture audio from a Chrome tab (YouTube, Netflix, meetings, …), transcribe it, translate it, and speak the translation in your ear. Free Google Translate is built in; YouTube uses zero-key captions, other tabs can use OpenAI/Google STT.",
+  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://speech.googleapis.com/*",
+    "https://translate.googleapis.com/*",
+    "https://*.youtube.com/*",
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -18,5 +28,11 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/youtube-captions.js"],
+      "matches": ["https://*.youtube.com/*"]
+    }
+  ],
   "minimum_chrome_version": "116"
 }

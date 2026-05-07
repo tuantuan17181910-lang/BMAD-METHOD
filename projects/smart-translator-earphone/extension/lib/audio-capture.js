@@ -105,7 +105,7 @@ export class TabAudioCapture {
  * @param {number} toRate
  * @returns {Float32Array}
  */
-function downsample(buffer, fromRate, toRate) {
+export function downsample(buffer, fromRate, toRate) {
   if (fromRate === toRate) return buffer;
   const ratio = fromRate / toRate;
   const length = Math.round(buffer.length / ratio);
@@ -121,7 +121,7 @@ function downsample(buffer, fromRate, toRate) {
 }
 
 /** @param {Float32Array} buf */
-function floatToPcm16(buf) {
+export function floatToPcm16(buf) {
   const out = new Int16Array(buf.length);
   for (let i = 0; i < buf.length; i++) {
     const s = Math.max(-1, Math.min(1, buf[i]));

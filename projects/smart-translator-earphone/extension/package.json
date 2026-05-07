@@ -1,0 +1,19 @@
+{
+  "name": "smart-translator-earphone-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome MV3 companion extension. Tests are Vitest; the extension itself is plain ESM and ships from this directory unchanged.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild lib/whisper-wasm.bundle-entry.js --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/whisper-wasm.bundle.js --loader:.wasm=file --external:onnxruntime-node",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "vitest": "^2.1.9"
+  }
+}

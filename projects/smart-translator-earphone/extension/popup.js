@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const sttSelect = $('stt-provider');
 const apiKeyInput = $('api-key');
+const apiKeyRow = $('api-key-row');
 const sourceLangSelect = $('source-lang');
 const targetLangSelect = $('target-lang');
 const dualEarCheckbox = $('dual-ear');
@@ -12,7 +13,33 @@ const translationEl = $('translation');
 
 const STORAGE_KEY = 'smartTranslatorEarphone:settings';
 
+const PAID_PROVIDERS = new Set(['whisper', 'google']);
+const FREE_PROVIDERS = new Set(['auto', 'youtube-captions', 'whisper-wasm']);
+
 let running = false;
+
+function isPaid(provider) {
+  return PAID_PROVIDERS.has(provider);
+}
+
+function syncApiKeyVisibility() {
+  apiKeyRow.style.display = isPaid(sttSelect.value) ? '' : 'none';
+}
+
+function describeEngine(engine) {
+  switch (engine) {
+    case 'youtube-captions':
+      return 'YouTube captions (zero-key)';
+    case 'whisper-wasm':
+      return 'Whisper-WASM (local)';
+    case 'whisper':
+      return 'OpenAI Whisper API';
+    case 'google':
+      return 'Google Cloud STT';
+    default:
+      return engine ?? 'unknown';
+  }
+}
 
 async function loadSettings() {
   const stored = await chrome.storage.local.get(STORAGE_KEY);
@@ -26,6 +53,7 @@ async function loadSettings() {
   // session storage so closing Chrome wipes it.
   const session = await chrome.storage.session.get(STORAGE_KEY);
   if (session[STORAGE_KEY]?.apiKey) apiKeyInput.value = session[STORAGE_KEY].apiKey;
+  syncApiKeyVisibility();
 }
 
 async function saveSettings() {
@@ -53,6 +81,8 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+sttSelect.addEventListener('change', syncApiKeyVisibility);
+
 toggleBtn.addEventListener('click', async () => {
   toggleBtn.disabled = true;
   await saveSettings();
@@ -65,14 +95,15 @@ toggleBtn.addEventListener('click', async () => {
     setRunning(false);
     return;
   }
+  const provider = sttSelect.value;
   const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    setStatus('Enter an STT API key first.');
+  if (isPaid(provider) && !apiKey) {
+    setStatus('Enter an API key for the paid engine, or pick a free one.');
     toggleBtn.disabled = false;
     return;
   }
   const config = {
-    sttProvider: sttSelect.value,
+    sttProvider: provider,
     apiKey,
     sourceLang: sourceLangSelect.value,
     targetLang: targetLangSelect.value,
@@ -89,15 +120,18 @@ toggleBtn.addEventListener('click', async () => {
     toggleBtn.disabled = false;
     return;
   }
-  setStatus('Capturing tab audio…');
+  setStatus(`Capturing tab audio (${describeEngine(res.resolvedProvider ?? provider)})…`);
   setRunning(true);
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.target !== 'popup') return false;
   if (msg.kind === 'status') {
-    if (msg.state === 'listening') setStatus('Listening to tab…');
-    if (msg.state === 'stopped') {
+    if (msg.state === 'listening') {
+      setStatus(`Listening (${describeEngine(msg.engine)})…`);
+    } else if (msg.state === 'loading-model') {
+      setStatus(`Loading ${describeEngine(msg.engine)} model (~40 MB on first run)…`);
+    } else if (msg.state === 'stopped') {
       setStatus('Stopped.');
       setRunning(false);
     }
@@ -113,3 +147,11 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 loadSettings();
+
+// Exported for unit tests.
+export const __test__ = {
+  isPaid,
+  describeEngine,
+  PAID_PROVIDERS,
+  FREE_PROVIDERS,
+};
